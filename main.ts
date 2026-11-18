@@ -26,6 +26,11 @@
 //     cost.
 //   - STOP_BPS = 100: if the dip keeps falling 1% past the entry, exit
 //     and wait for the next setup instead of riding a waterfall.
+//   - After a stop-loss exit the bot stays out until the close climbs
+//     back above the trailing mean: the dip signal stays true all the
+//     way down a waterfall, so buying again at once would re-enter the
+//     same fall. A recovery exit does not set this guard, since the
+//     price is already back above the mean by then.
 //   - Sizing is all-in / all-out: with one asset and a 10,000 bps weight
 //     cap, splitting adds nothing and each extra fill pays impact again.
 //   - max_slippage_bps is left wide open (10,000), as in the kit
@@ -54,6 +59,11 @@ const MAX_SLIPPAGE_BPS = 10_000;
 const closes: (bigint | null)[] = [];
 /** The close the current position was entered at, null while flat. */
 let entryClose: bigint | null = null;
+/**
+ * True after a stop-loss exit until the close climbs back above the
+ * trailing mean. While set, the bot does not open a new position.
+ */
+let stoppedOut = false;
 
 /** Trailing simple moving average of the last LOOKBACK_BARS closes, or null. */
 function trailingMean(seq: number): bigint | null {
@@ -77,6 +87,13 @@ await runBars({
 
     const position = state.positions.get(SYMBOL);
     if (position === undefined) {
+      // After a stop-loss, wait for the price to climb back above the
+      // mean before buying again: the dip signal stays true all the way
+      // down a waterfall, so re-buying at once would re-enter the fall.
+      if (stoppedOut) {
+        if (close >= mean) stoppedOut = false;
+        else return [];
+      }
       // Flat: buy the dip, all-in, when close is ENTRY_BPS below the mean.
       if (close * BPS <= mean * (BPS - ENTRY_BPS) && state.cash > 0n) {
         const notional = state.cash;
@@ -91,6 +108,7 @@ await runBars({
     const recovered = close * BPS >= mean * (BPS + EXIT_BPS);
     const stopped = entryClose !== null && close * BPS <= entryClose * (BPS - STOP_BPS);
     if (recovered || stopped) {
+      if (stopped) stoppedOut = true;
       entryClose = null;
       return [{ side: 'sell', symbol: SYMBOL, qty: position.qty, max_slippage_bps: MAX_SLIPPAGE_BPS }];
     }

@@ -19,6 +19,9 @@ dips:
   trailing 120-bar (2-hour) simple moving average.
 - **Sell** everything when the price recovers to **80 bps above** that mean,
   or on a **1% stop-loss** below the entry close.
+- **After a stop-loss**, the bot stays out until the close climbs back above
+  the mean: the dip signal stays true all the way down a waterfall, so
+  buying again at once would re-enter the same fall.
 
 Long only, no leverage, no shorts. Every decision is a pure function of the
 bars seen so far, in exact bigint arithmetic — no clock, no environment, no
